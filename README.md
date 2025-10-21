@@ -1,175 +1,148 @@
-## Updates — Sept. 30, 2025
+# RAG-HPO: 临床HPO语料匹配项目 (工程化重构版)
 
-Based on user feedback, we have uploaded a new file that provides clearer alignment between cases, manual annotations, and results. The file is organized into sheets that contain well-matched information, allowing users to more easily compare outputs and trace findings across sources. This update ensures that results can be understood in context, reduces confusion, and improves the overall usability of the dataset.
+## 项目概述
 
- **Our paper, _Improving Automated Deep Phenotyping Through Large Language Models Using Retrieval-Augmented Generation_, has been accepted for publication in _Genome Medicine_!**  
+RAG-HPO 是一个基于 Python 的工具，旨在从临床笔记中提取人类表型本体 (Human Phenotype Ontology, HPO) 术语。它利用大型语言模型 (LLM) 和检索增强生成 (Retrieval Augmented Generation, RAG) 技术，提供标准化的表型描述，这对于基因组学和临床研究至关重要。RAG-HPO 本身不是一个 LLM，但它利用用户配置的 LLM 来处理和标注临床文本。
 
-[https://genomemedicine.biomedcentral.com/articles/10.1186/s13073-025-01521-w](https://genomemedicine.biomedcentral.com/articles/10.1186/s13073-025-01521-w)
+**注意：保护患者信息并确保符合机构指南和 HIPAA 是最终用户的责任。**
 
- **If you use RAG-HPO in your work, please cite our publication!**
+## 工程化重构概览
 
----
+为了将本项目从科研导向的 Jupyter Notebooks 转换为更具工程化、易于部署和维护的应用程序，我们进行了以下关键重构：
 
-### RAG-HPO Updates
+1.  **模块化**: 将核心逻辑从 Notebooks 中提取，并组织成结构化的 Python 模块。
+2.  **命令行界面 (CLI)**: 引入 `click` 库，为知识库构建和 RAG 管道运行提供统一的命令行入口。
+3.  **配置管理**: 将 LLM 相关的配置（如 API 密钥、模型名称）通过 CLI 参数或环境变量进行管理，而非交互式输入。
+4.  **依赖管理**: 持续使用 Poetry 进行项目依赖管理，确保环境一致性。
 
-- The **HPO vector database** has been updated for improved consistency and coverage.
-- We've added:
-  - More **phrase-to-HPO ID matches**
-  - An additional **index** with structured metadata for downstream analysis
-  - Matched **SNOMED CT** and **UMLS IDs** for many HPO terms
-  - Included **alternate HPO IDs** from the original ontology source
+这些改动使得项目更易于自动化、集成到其他系统，并为未来的功能扩展奠定了坚实的基础。
 
----
+## 模块说明
 
-### Benchmarking and Evaluation Data
+本项目现在组织在 `rag_hpo/` 包中，包含以下核心模块：
 
-We’ve released:
-- Test cases used in the manuscript
-- Input/output data from the analysis
-- Source code for calculating:
-  - **True Positives / False Positives / False Negatives**
-  - **Precision / Recall / F1 Scores**
+*   **`rag_hpo/`**: 项目的根包目录。
+*   **`rag_hpo/__init__.py`**: Python 包的初始化文件。
+*   **`rag_hpo/utils.py`**:
+    *   **作用**: 包含项目通用的辅助函数和类，如日志记录器 (`Logger`)、文本清理函数 (`clean_text_for_embedding`, `clean_clinical_note`) 以及状态管理（检查点）的辅助函数。
+    *   **主要功能**: 提供统一的日志输出，确保文本预处理的一致性，并支持流程中断后的恢复。
+*   **`rag_hpo/vectorization.py`**:
+    *   **作用**: 负责 HPO 知识库的构建和更新。这是 RAG 流程中“检索”部分的基础。
+    *   **主要功能**:
+        *   自动下载 HPO OBO 本体文件。
+        *   解析本体，提取 HPO 术语、定义、同义词、交叉引用 (SNOMED CT, UMLS) 和谱系信息。
+        *   使用预训练的句子嵌入模型（如 SapBERT）将 HPO 术语及其相关信息向量化。
+        *   将生成的元数据和向量嵌入保存为 `hpo_meta.json` 和 `hpo_embedded.npz` 文件。
+*   **`rag_hpo/pipeline.py`**:
+    *   **作用**: 实现 RAG 核心管道的逻辑，包括 LLM 交互、FAISS 检索和 HPO 术语的最终映射。
+    *   **主要功能**:
+        *   `LLMClient` 类：封装与 LLM API 的交互，包括令牌使用跟踪和速率限制。
+        *   加载系统提示 (`system_prompts.json`)，指导 LLM 进行信息提取和术语映射。
+        *   加载预构建的 HPO 向量数据库 (FAISS 索引)。
+        *   处理临床笔记，通过 LLM 提取表型短语。
+        *   利用 FAISS 检索与提取短语最相似的 HPO 候选术语。
+        *   再次调用 LLM，从候选列表中选择最佳匹配的 HPO 术语。
+        *   处理和输出最终的 HPO 标注结果。
+*   **`rag_hpo/cli.py`**:
+    *   **作用**: 项目的命令行接口，通过 `click` 库提供用户友好的命令行操作。
+    *   **主要功能**: 定义了 `build-kb` 和 `process` 两个子命令，作为整个工作流的入口。
+*   **`rag_hpo/config.py`**:
+    *   **作用**: 目前是占位符文件，未来可用于集中管理项目配置，例如 LLM 默认参数、文件路径等。
 
-We welcome any feedback or comments regarding the program or datasets.
+## 使用说明
 
----
+### 环境设置
 
-### Help Us Test the GUI!
+1.  **克隆仓库**:
+    ```bash
+    git clone https://github.com/your-repo/RAG-HPO.git
+    cd RAG-HPO
+    ```
+2.  **安装依赖**: 确保您已安装 Poetry。然后运行：
+    ```bash
+    poetry install
+    ```
+    这将安装所有项目依赖，并设置好虚拟环境。
 
-We are nearing completion of a **web-based GUI** for RAG-HPO and are actively seeking **beta testers** to try out the interface and provide feedback.
+### 构建知识库
 
-If you are interested in participating, please contact:  
-📧 Jennifer Posey — [`jep2156@cumc.columbia.edu`](mailto:jep2156@cumc.columbia.edu)  
-📧 Brandon Garcia — [`brandon.garcia@bcm.edu`](mailto:brandon.garcia@bcm.edu)
-
-# RAG-HPO 
-
-RAG-HPO is a Python-based tool designed to extract Human Phenotype Ontology (HPO) terms from clinical notes. It leverages large language models (LLMs) and Retrieval Augmented Generation (RAG) to provide standardized phenotypic descriptions critical for genomics and clinical research. RAG-HPO itself is not an LLM, but it utilizes LLMs provided by the user to process and annotate clinical text. 
-
-### **Note: Protecting patient information and ensuring compliance with institutional guidelines and HIPAA is the end user’s responsibility.**
-
----
-
-[📄 **View our article on medRxiv**](https://www.medrxiv.org/content/10.1101/2024.12.01.24318253v1)
-
-[📬 **Interested in receiving updates? Join our Mailing List**](https://forms.gle/tBNHbvMZvLroYxrr9)
-
-## How RAG-HPO Works: 
-
-1.	Input Clinical Notes: You provide clinical notes either manually during runtime or by uploading a CSV file.
-2.	Extract Key Phrases via LLM: The tool uses a configured LLM to identify clinically relevant phrases from these notes.
-3.	Match Phrases to HPO Terms: It employs vector similarity search (FAISS) and fuzzy matching to map these phrases to appropriate HPO terms.
-4.	Output Structured Data: Finally, it produces a CSV with patient IDs, phenotypic descriptions, and matched HPO terms.
-
-## What You Need Before You Start:
-
-1.	LLM Configuration:
-	An API key for accessing your chosen LLM (cloud-based or local).
-	The base URL of the LLM API.
-	The LLM model name.
-2.	HPO Data and Vectorization:
-	A preprocessed HPO embeddings file (G2GHPO_metadata.npy), generated by vectorizing HPO terms. This file is used to match clinical phrases to HPO terms.
-	Access to the [HPO ontology](https://hpo.jax.org/data/ontology) and additional validated phrases (HPO_addons.csv) if you plan to update the vector database.
-3.	Python & Dependencies:
-	Python installed.
-	All required packages as listed in requirements.txt.
-
-Note: RAG-HPO has been tested with [Groq.com](https://console.groq.com), which offers free/cheap API keys and access to cloud-based LLMS. However, any OpenAI-compatible LLM should work, including locally hosted ones like [LM-studio](https://lmstudio.ai/).
-
-**WARNING: Do not submit sensitive or identifying information. _ALWAYS_ de-identify your data**
-
-## Setting Up the Environment:
-
-1. Install Jupyter Notebook or [Microsoft Visual Studio Code](https://code.visualstudio.com/download).
-2. Clone this repository and navigate to its directory.
-3. Create a virtual python environment(recommended). 
-4. Install dependencies with:
+在运行 RAG 管道之前，您需要构建或更新 HPO 知识库。这包括下载 HPO 本体文件，并将其向量化。
 
 ```bash
-pip install -r requirements.txt
+poetry run rag-hpo build-kb [OPTIONS]
 ```
 
-Or, using the provided script:
+**常用选项**:
 
-```python
-import os
-import sys
-import subprocess
+*   `--obo-url TEXT`: HPO OBO 文件的下载 URL (默认: `https://purl.obolibrary.org/obo/hp.obo`)。
+*   `--obo-path TEXT`: 本地保存 HPO OBO 文件的路径 (默认: `hp.obo`)。
+*   `--refresh-days INTEGER`: 如果本地 OBO 文件超过指定天数，则重新下载 (默认: `14`)。
+*   `--meta-output TEXT`: HPO 元数据 JSON 文件的输出路径 (默认: `hpo_meta.json`)。
+*   `--vec-output TEXT`: HPO 嵌入向量 NPZ 文件的输出路径 (默认: `hpo_embedded.npz`)。
+*   `--hpo-full-csv TEXT`: 完整 HPO 术语 CSV 文件的输出路径 (默认: `hpo_terms_full.csv`)。
+*   `--use-sbert / --no-sbert`: 是否使用 SBERT 模型进行嵌入 (默认: `True`)。
+*   `--sbert-model TEXT`: SBERT 模型名称 (默认: `pritamdeka/SapBERT-mnli-snli-scinli-scitail-mednli-stsb`)。
+*   `--bge-model TEXT`: BGE 模型名称 (默认: `BAAI/bge-small-en-v1.5`)。
+*   `--limit INTEGER`: 限制处理的 HPO 术语数量 (仅用于测试)。
 
-def check_python_version(min_version=(3, 7)):
-    """
-    Ensure the Python version meets the minimum requirement.
-    """
-    if sys.version_info < min_version:
-        print(f"Error: Python {'.'.join(map(str, min_version))} or higher is required.")
-        print("Please update your Python installation and try again.")
-        sys.exit(1)
+**示例**:
 
-def install_package(package):
-    """
-    Install an individual package, handling any installation errors.
-    """
-    try:
-        print(f"Installing {package}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-        print(f"Successfully installed {package}.")
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to install {package}: {e}")
-
-def install_requirements(requirements_file="requirements.txt"):
-    """
-    Install packages from a requirements file.
-    """
-    if not os.path.exists(requirements_file):
-        print(f"Error: {requirements_file} not found.")
-        sys.exit(1)
-
-    print(f"Installing packages from {requirements_file}...")
-    with open(requirements_file, "r") as f:
-        for line in f:
-            package = line.strip()
-            if package and not package.startswith("#"):
-                install_package(package)
-    print("Finished processing requirements.")
-
-if __name__ == "__main__":
-    # Check Python version first
-    check_python_version(min_version=(3, 7))
-    # Install packages
-    install_requirements()
+```bash
+# 构建一个用于测试的有限知识库，并保存到 data/ 目录下
+poetry run rag-hpo build-kb \
+    --obo-path data/hp.obo \
+    --meta-output data/hpo_meta.json \
+    --vec-output data/hpo_embedded.npz \
+    --hpo-full-csv data/hpo_terms_full.csv \
+    --limit 100
 ```
 
-## Using RAG-HP0: 
+### 运行 RAG 管道
 
-1) Prepare Your LLM Configuration: Have your API key, base URL, and model name ready.
-2) Run the Jupyter Notebook: Open the .ipynb file in Jupyter or VS Code.
-3) Follow the Prompts:
-	Configure the LLM by providing the requested API and model details.
-	Input your clinical notes (manually or via CSV).
-4) Generate Results:
-	Run the notebook cells sequentially.
-	View the annotated HPO terms in the terminal or save them as a CSV.
+使用已构建的知识库处理临床笔记，并提取 HPO 术语。
 
-## Vectorization of the HPO Database:
+```bash
+poetry run rag-hpo process [OPTIONS]
+```
 
-RAG-HPO relies on a vectorized database of HPO terms. Before running the annotation tool, you may need to:
+**常用选项**:
 
-1) Obtain HPO Data: Download the HPO database from the [HPO website](https://hpo.jax.org/data/ontology).
-2) Incorporate Additional Phrases: Add validated phrases to HPO_addons.csv to improve precision.
-3) Vectorize the Database: Use the provided notebook to:
-	Process HPO data and generate a .csv for inspection.
-	Vectorize the database, producing the G2GHPO_metadata.npy file. This step takes about 10 minutes and can be repeated as needed when HPO is updated (usually monthly).
+*   `--input-csv PATH`: 包含临床笔记的输入 CSV 文件路径 (必需)。
+*   `--output-csv PATH`: 保存 HPO 标注结果的 CSV 文件路径。
+*   `--output-json-raw PATH`: 保存 LLM 原始 JSON 输出的 CSV 文件路径。
+*   `--display / --no-display`: 是否在终端显示结果 (默认: `False`)。
+*   `--meta-path TEXT`: HPO 元数据 JSON 文件的路径 (默认: `hpo_meta.json`)。
+*   `--vec-path TEXT`: HPO 嵌入向量 NPZ 文件的路径 (默认: `hpo_embedded.npz`)。
+*   `--use-sbert / --no-sbert`: 是否使用 SBERT 模型进行嵌入 (默认: `True`)。
+*   `--sbert-model TEXT`: SBERT 模型名称。
+*   `--bge-model TEXT`: BGE 模型名称。
+*   `--api-key TEXT`: LLM 的 API 密钥。**可以通过 `LLM_API_KEY` 环境变量设置。**
+*   `--base-url TEXT`: LLM API 的基础 URL (默认: `https://api.groq.com/openai/v1/chat/completions`)。**可以通过 `LLM_BASE_URL` 环境变量设置。**
+*   `--llm-model-name TEXT`: LLM 模型名称 (默认: `llama3-groq-70b-8192-tool-use-preview`)。**可以通过 `LLM_MODEL_NAME` 环境变量设置。**
+*   `--max-tokens-per-day INTEGER`: LLM 每日最大令牌数 (默认: `500000`)。
+*   `--max-queries-per-minute INTEGER`: LLM 每分钟最大查询数 (默认: `30`)。
+*   `--temperature FLOAT`: LLM 的温度参数 (默认: `0.7`)。
+*   `--system-prompts-file TEXT`: 系统提示 JSON 文件路径 (默认: `system_prompts.json`)。
 
-## Planned Improvements:
+**示例**:
 
-- Annotator App: An app that combines LLM phenotype extraction with concept recognition tools and RAG to quickly and efficiently extract and assign HPO terms. This app will also allow users to manually edit their results to reduce the time needed for phenotype analysis. 
-- Containerization: A fully containerized version of RAG-HPO is under development, allowing use without manual command line interaction.
-- Enhanced Error Handling: We are continually improving error messages and recovery steps for a smoother user experience.
+```bash
+# 假设您有一个名为 input.csv 的临床笔记文件，并且已经构建了知识库
+# 运行 RAG 管道，将结果保存到 output.csv 并显示在终端
+poetry run rag-hpo process \
+    --input-csv input.csv \
+    --output-csv output.csv \
+    --display \
+    --api-key YOUR_LLM_API_KEY \
+    --base-url https://api.groq.com/openai/v1/chat/completions \
+    --llm-model-name llama3-groq-70b-8192-tool-use-preview
+```
+**注意**: 对于敏感信息如 `API_KEY`，强烈建议通过环境变量设置，例如 `export LLM_API_KEY="YOUR_KEY"`。
 
-## Feedback and Contributions:
+## 未来改进
 
-If you have feedback, suggestions, or want to integrate RAG-HPO into existing pipelines, please contact Jennifer Posey (jennifer.posey@bcm.edu) or Brandon Garcia (brandon.garcia@bcm.edu) 
-If you’d like to contribute additional validated phrases to the HPO ontology, send us a .csv file following the format of HPO_addons.csv.
-
-## Here is an example of how RAG-HPO Compares to other programs! 
-![image](https://github.com/user-attachments/assets/5863d790-f887-428b-b63f-c001314143af)
+*   **更完善的配置管理**: 引入 `rag_hpo/config.py` 或使用 `PyYAML` 等库，支持从配置文件加载所有参数，提供更灵活的配置方式。
+*   **错误处理与日志**: 进一步细化错误类型，提供更友好的错误信息和更详细的日志记录。
+*   **测试套件**: 编写单元测试和集成测试，确保每个模块和整个管道的健壮性。
+*   **性能优化**: 针对大规模数据处理，探索并行化或分布式处理方案。
+*   **GUI 集成**: 考虑与现有或未来开发的 GUI 进行集成，提供更直观的用户体验。
