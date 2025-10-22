@@ -1,13 +1,13 @@
-import time
-import re
-import unicodedata
 import os
-import sys
-import json
+import re
 import shutil
-import pandas as pd
-from contextlib import contextmanager
 import subprocess
+import time
+import unicodedata
+from contextlib import contextmanager
+
+import pandas as pd
+
 
 # ======================= Logger Class =======================
 class Logger:
@@ -15,7 +15,10 @@ class Logger:
         self.printed_messages = set()
 
     def log(self, msg, once=False):
-        """Prints a timestamped message. If once=True, message is only printed once per session."""
+        """
+        Print a timestamped message.
+        If once=True, the message is only printed once per session.
+        """
         if once:
             # Use a hash of the message to check for duplicates
             msg_hash = hash(msg)
@@ -24,41 +27,49 @@ class Logger:
             self.printed_messages.add(msg_hash)
         print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}")
 
+
 logger = Logger()
+
 
 def timestamped_print(msg):
     logger.log(msg)
 
+
 # ======================= Text Cleaning Functions =======================
-PAT_PARENTHESES = re.compile(r'\\s*\\([^)]*\\)\\s*')
-PAT_NON_ALPHANUMERIC_END = re.compile(r'[^a-zA-Z0-9\\s]+$')
+PAT_PARENTHESES = re.compile(r"\s*\([^)]*\)\s*")
+PAT_NON_ALPHANUMERIC_END = re.compile(r"[^a-zA-Z0-9\u4e00-\u9fff\s]+$")
+
 
 def clean_text_for_embedding(txt: str) -> str:
     """
     Cleans text for embedding by removing content in parentheses,
-    extra spaces, trimming, lowercasing, and removing trailing non-alphanumeric characters.
-    This version is from HPO_Vectorization.ipynb.
+    extra spaces, trimming, and lowering仅限 ASCII 字母，保留中文等其他字符。
     """
-    txt = PAT_PARENTHESES.sub(' ', txt)
-    txt = re.sub(r'\\s+', ' ', txt).strip().lower()
-    txt = PAT_NON_ALPHANUMERIC_END.sub('', txt)
+    txt = PAT_PARENTHESES.sub(" ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    txt = "".join(ch.lower() if "A" <= ch <= "Z" else ch for ch in txt)
+    txt = PAT_NON_ALPHANUMERIC_END.sub("", txt)
     return txt
+
 
 def clean_clinical_note(text: str) -> str:
     """
-    Cleans clinical note text by fixing encoding issues, normalizing unicode,
-    removing non-ASCII characters, and normalizing spaces.
-    This version is from RAG-HPO.ipynb.
+    规范临床文本，同时保留中文、英文及常见符号：
+    - Unicode 归一化；
+    - 去除控制字符与不可见字符；
+    - 折叠多余空白。
     """
-    # Fix typical encoding issues
-    text = text.encode('latin1', errors='ignore').decode('utf-8', errors='ignore')
-    # Normalize unicode (e.g., smart quotes)
-    text = unicodedata.normalize("NFKD", text)
-    # Remove non-ASCII characters (optional: keep certain ones like µ or – if needed)
-    text = re.sub(r'[^\\x00-\\x7F]+', ' ', text)
-    # Remove multiple spaces and trim
-    text = re.sub(r'\\s+', ' ', text).strip()
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "C")
+    text = re.sub(r"[ \u00A0\u1680\u2000-\u200B\u202F\u205F\u3000]+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
+
 
 # ======================= Subprocess & Logging =======================
 @contextmanager
@@ -69,6 +80,7 @@ def managed_subprocess(*args, **kwargs):
     finally:
         proc.terminate()
         proc.wait()
+
 
 # ======================= State Management (from RAG-HPO.ipynb) =======================
 def load_state(temp_files):
@@ -87,7 +99,8 @@ def load_state(temp_files):
             logger.log(f"Warning loading '{key}': {e}. Starting fresh for this key.")
     return state
 
-def save_state_checkpoint(state, temp_files, keys=('input','combined', 'exact', 'non_exact', 'final')):
+
+def save_state_checkpoint(state, temp_files, keys=("input", "combined", "exact", "non_exact", "final")):
     # Saves pipeline state to disk
     for key in keys:
         df = state.get(key)
@@ -105,7 +118,9 @@ def save_state_checkpoint(state, temp_files, keys=('input','combined', 'exact', 
             logger.log(f"[SAVE] Checkpointed '{key}' ({len(df)} rows) -> {abs_path}", once=True)
         except Exception as e:
             logger.log(f"Error saving '{key}': {e}")
-            if os.path.exists(tmp_path): os.remove(tmp_path)
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
 
 def cleanup(temp_files, success):
     # Removes temp files if pipeline succeeded
