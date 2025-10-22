@@ -1,0 +1,25 @@
+Patient ID,Category,Phenotype name,HPO ID
+1,Abnormal,原发性闭经,HP:0000786
+1,Abnormal,乳房发育延迟,HP:0025515
+1,Abnormal,嗅觉减退,HP:0004409
+1,Abnormal,血清雌二醇水平降低,HP:0008214
+1,Abnormal,腋毛稀少,HP:0002215
+1,Abnormal,泌乳素水平升高(45 ng/mL),HP:0000870
+2,Abnormal,记忆障碍,HP:0002354
+2,Abnormal,步态不稳,HP:0002317
+2,Abnormal,夜间偶有幻觉,HP:0000738
+2,Abnormal,幻觉以视觉内容为主,HP:0002367
+2,Abnormal,需扶墙行走,HP:0012651
+2,Abnormal,头颅MRI提示海马萎缩,HP:0410170
+3,Abnormal,夜间阵发性呼吸困难,HP:0034807
+3,Abnormal,左心室射血分数轻度降低,HP:0012663
+3,Abnormal,轻度低碳酸血症,HP:0012417
+3,Abnormal,平卧时出现呼吸困难,HP:0034807
+3,Abnormal,双下肢周围性水肿,HP:0010741
+4,Abnormal,牙龈出血,HP:0000225
+4,Abnormal,月经过多,HP:0400008
+4,Abnormal,贫血,HP:0001903
+4,Abnormal,血小板减少,HP:0001873
+4,Abnormal,Hb 95 g/L,No Candidate Fit
+4,Abnormal,血小板 80×10^9/L,HP:0001873
+4,Abnormal,皮肤可见散在紫癜,HP:0000979
