@@ -1,0 +1,2 @@
+[flake8]
+ignore = E405, F405, PD901, BLE001, E501

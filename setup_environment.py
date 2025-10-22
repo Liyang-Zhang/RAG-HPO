@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-import os
-import sys
+import ensurepip
 import json
+import os
 import shutil
 import subprocess
-import ensurepip
+import sys
 
 STATE_FILE = ".setup_state.json"
+
 
 def run_command(cmd, **kw):
     """Run a shell command; return True if it succeeds."""
@@ -16,26 +17,32 @@ def run_command(cmd, **kw):
     except subprocess.CalledProcessError:
         return False
 
+
 def load_state():
     """Load progress flags from disk (or initialize)."""
     if os.path.isfile(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
+        with open(STATE_FILE, encoding="utf-8") as f:
             return json.load(f)
     return {
         "locked": False,
         "pip_upgraded": False,
         "env_created": False,
         "deps_installed": False,
-        "verified": False
+        "verified": False,
     }
+
 
 def save_state(state):
     """Persist progress flags to disk."""
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
+
 def lock_python_version(target="3.13.2"):
-    """Ensure the script runs under exactly Python target, re-exec via pyenv if needed."""
+    """
+    Ensure the script runs under the expected Python version.
+    Re-exec via pyenv if needed.
+    """
     cur = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     if cur == target:
         print(f"🔒 Python {target} detected.")
@@ -53,6 +60,7 @@ def lock_python_version(target="3.13.2"):
     print(f"✅ Python {target} installed and set. Re-launching…")
     os.execv(new_py, [new_py] + sys.argv)
 
+
 def ensure_pip():
     """Bootstrap pip if missing, then upgrade to the latest version."""
     try:
@@ -63,15 +71,18 @@ def ensure_pip():
     print("🔄 Upgrading pip…")
     run_command([sys.executable, "-m", "pip", "install", "--upgrade", "pip"])
 
+
 def ensure_virtualenv():
     """Decide between built-in venv or pip-install virtualenv."""
     try:
         import venv  # noqa: F401
+
         return "venv"
     except ImportError:
         print("🔧 venv module unavailable; installing virtualenv…")
         run_command([sys.executable, "-m", "pip", "install", "virtualenv"])
         return "virtualenv"
+
 
 def create_env(env_name="venv"):
     """Create the virtual environment (or skip if it already exists)."""
@@ -93,13 +104,14 @@ def create_env(env_name="venv"):
             ok = run_command([sys.executable, "-m", "venv", env_name])
     return ok
 
+
 def install_requirements(req_file="requirements.txt", env_name="venv"):
     """Install all packages from requirements.txt into the venv."""
     if not os.path.isfile(req_file):
         print(f"⚠️ '{req_file}' not found; skipping dependency installation.")
         return False
 
-    pip_exe = os.path.join(env_name, "Scripts" if os.name=="nt" else "bin", "pip")
+    pip_exe = os.path.join(env_name, "Scripts" if os.name == "nt" else "bin", "pip")
     if not os.path.isfile(pip_exe):
         print(f"⚠️ pip executable not found at '{pip_exe}'; skipping install.")
         return False
@@ -109,11 +121,13 @@ def install_requirements(req_file="requirements.txt", env_name="venv"):
     ok &= run_command([pip_exe, "install", "-r", req_file])
     return ok
 
+
 def verify_installation(env_name="venv"):
     """List the installed packages in the venv as a sanity check."""
-    pip_exe = os.path.join(env_name, "Scripts" if os.name=="nt" else "bin", "pip")
+    pip_exe = os.path.join(env_name, "Scripts" if os.name == "nt" else "bin", "pip")
     print("✅ Verifying installed packages:")
     run_command([pip_exe, "list"])
+
 
 def main():
     state = load_state()
@@ -155,7 +169,7 @@ def main():
     # 6. Completion summary
     print("\n🎉 Setup complete (or resumed)!")
     print("To activate the environment:")
-    if os.name=="nt":
+    if os.name == "nt":
         print(r"  .\venv\Scripts\activate")
     else:
         print("  source venv/bin/activate")
@@ -163,6 +177,7 @@ def main():
     # 7. Clean up state file when everything is done
     if all(state.values()):
         os.remove(STATE_FILE)
+
 
 if __name__ == "__main__":
     main()
