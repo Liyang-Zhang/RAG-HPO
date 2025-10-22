@@ -188,6 +188,25 @@ poetry run rag-hpo process \
 
 仓库额外提供了一个中文病例示例 (`examples/clinical/case_phase2_input.csv`)，可直接用于验证中文知识库与 Qwen 接口的联调效果。
 
+### Web 应用体验（MVP）
+
+项目新增 `webapp/` 目录，提供粘贴式的交互界面，适合临床或医学部快速体验：
+
+1. **启动 FastAPI 后端**（依赖与 CLI 相同）：
+    ```bash
+    poetry run uvicorn webapp.backend.app:app --reload --port 8000
+    ```
+    在启动前请确认环境变量 `LLM_API_KEY`、`HPO_META_PATH`、`HPO_VEC_PATH` 等已正确配置。
+2. **启动 Vue 前端**：
+    ```bash
+    cd webapp/frontend
+    npm install
+    npm run dev
+    ```
+    默认使用 `http://localhost:8000` 作为 API 地址，如需更改可设置 `VITE_API_BASE_URL`。
+
+前端支持在页面中粘贴单条临床描述、发起分析、对 HPO 结果进行复核，并一键导出 CSV；更详细的说明见 `webapp/README.md`。
+
 ## 未来改进
 
 *   **更完善的配置管理**: 引入 `rag_hpo/config.py` 或使用 `PyYAML` 等库，支持从配置文件加载所有参数，提供更灵活的配置方式。

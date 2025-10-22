@@ -40,6 +40,10 @@ dash = "3.2.0"
 dash-bootstrap-components = "2.0.4"
 flask = "3.1.2"
 
+# Web API
+fastapi = "0.115.6"
+uvicorn = {extras = ["standard"], version = "0.32.1"}
+
 # Excel / CSV Handling
 openpyxl = "3.1.5"
 xlrd = "2.0.2"

@@ -181,3 +181,5 @@ data/hpo_embedded*.npz
 data/hpo_terms_full*.csv
 data/hp.obo
 ~$*.xlsx
+webapp/frontend/node_modules/
+webapp/frontend/dist/
