@@ -87,7 +87,7 @@ rag-hpo = "rag_hpo.cli:cli"
 # -------- Tooling configs --------
 
 [tool.black]
-line-length = 88
+line-length = 150
 target-version = ['py312']
 
 [tool.isort]
@@ -98,15 +98,11 @@ include_trailing_comma = true
 force_grid_wrap = 0
 
 [tool.ruff]
-line-length = 88
+line-length = 150
 target-version = "py312"
-# 与 Black 友好共存；按需启用更多规则集
-extend-select = ["E", "F", "I", "UP", "B"]  # Pyupgrade/bugbear等
-fix = true
-unsafe-fixes = false
-# 与 isort 规则一致（ruff 会接管 import 排序）
+
 [tool.ruff.lint.isort]
-known-first-party = ["fates_mrd_ml"]
+known-first-party = ["rag_hpo"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

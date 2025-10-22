@@ -80,6 +80,7 @@ poetry run rag-hpo build-kb [OPTIONS]
 *   `--meta-output TEXT`: HPO 元数据 JSON 文件的输出路径 (默认: `hpo_meta.json`)。
 *   `--vec-output TEXT`: HPO 嵌入向量 NPZ 文件的输出路径 (默认: `hpo_embedded.npz`)。
 *   `--hpo-full-csv TEXT`: 完整 HPO 术语 CSV 文件的输出路径 (默认: `hpo_terms_full.csv`)。
+*   `--chpo-path PATH`: 可选的 CHPO Excel/CSV 路径，用于注入中文翻译。
 *   `--use-sbert / --no-sbert`: 是否使用 SBERT 模型进行嵌入 (默认: `True`)。
 *   `--sbert-model TEXT`: SBERT 模型名称 (默认: `pritamdeka/SapBERT-mnli-snli-scinli-scitail-mednli-stsb`)。
 *   `--bge-model TEXT`: BGE 模型名称 (默认: `BAAI/bge-small-en-v1.5`)。
@@ -94,7 +95,23 @@ poetry run rag-hpo build-kb \
     --meta-output data/hpo_meta.json \
     --vec-output data/hpo_embedded.npz \
     --hpo-full-csv data/hpo_terms_full.csv \
+    --chpo-path CHPO-2025-4.xlsx \
     --limit 100
+```
+
+针对中文生产环境，推荐直接切换到中文优化的 BGE 嵌入模型，并为输出与日志使用独立命名，示例命令如下：
+
+```bash
+mkdir -p logs
+poetry run rag-hpo build-kb \
+    --obo-path data/hp.obo \
+    --meta-output data/hpo_meta_bge_small_zh.json \
+    --vec-output data/hpo_embedded_bge_small_zh.npz \
+    --hpo-full-csv data/hpo_terms_full_bge_small_zh.csv \
+    --chpo-path CHPO-2025-4.xlsx \
+    --no-sbert \
+    --bge-model BAAI/bge-small-zh-v1.5 \
+    2>&1 | tee logs/build_kb_bge_small_zh_$(date +%Y%m%d).log
 ```
 
 ### 运行 RAG 管道
@@ -117,8 +134,8 @@ poetry run rag-hpo process [OPTIONS]
 *   `--sbert-model TEXT`: SBERT 模型名称。
 *   `--bge-model TEXT`: BGE 模型名称。
 *   `--api-key TEXT`: LLM 的 API 密钥。**可以通过 `LLM_API_KEY` 环境变量设置。**
-*   `--base-url TEXT`: LLM API 的基础 URL (默认: `https://api.groq.com/openai/v1/chat/completions`)。**可以通过 `LLM_BASE_URL` 环境变量设置。**
-*   `--llm-model-name TEXT`: LLM 模型名称 (默认: `llama3-groq-70b-8192-tool-use-preview`)。**可以通过 `LLM_MODEL_NAME` 环境变量设置。**
+*   `--base-url TEXT`: LLM API 的基础 URL (默认: `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`)。**可以通过 `LLM_BASE_URL` 环境变量设置。**
+*   `--llm-model-name TEXT`: LLM 模型名称 (默认: `qwen3-max`)。**可以通过 `LLM_MODEL_NAME` 环境变量设置。**
 *   `--max-tokens-per-day INTEGER`: LLM 每日最大令牌数 (默认: `500000`)。
 *   `--max-queries-per-minute INTEGER`: LLM 每分钟最大查询数 (默认: `30`)。
 *   `--temperature FLOAT`: LLM 的温度参数 (默认: `0.7`)。
@@ -128,16 +145,48 @@ poetry run rag-hpo process [OPTIONS]
 
 ```bash
 # 假设您有一个名为 input.csv 的临床笔记文件，并且已经构建了知识库
-# 运行 RAG 管道，将结果保存到 output.csv 并显示在终端
+# （默认使用阿里云 DashScope 的通义千问 Qwen3-Max 模型）
 poetry run rag-hpo process \
     --input-csv input.csv \
     --output-csv output.csv \
+    --meta-path data/hpo_meta_bge_small_zh.json \
+    --vec-path data/hpo_embedded_bge_small_zh.npz \
     --display \
-    --api-key YOUR_LLM_API_KEY \
-    --base-url https://api.groq.com/openai/v1/chat/completions \
-    --llm-model-name llama3-groq-70b-8192-tool-use-preview
+    --api-key "$LLM_API_KEY" \
+    --base-url https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
+    --llm-model-name qwen3-max \
+    --max-queries-per-minute 10 \
+    --no-sbert \
+    --bge-model BAAI/bge-small-zh-v1.5
 ```
+
+### 通义千问 (Qwen) 快速接入
+
+1.  在阿里云控制台获取 DashScope API Key，并设置到环境变量或直接通过命令行参数传入。例如在当前 shell 中执行：
+    ```bash
+    export LLM_API_KEY="sk-xxxxxxxxxxxxxxxxxxxxxxxx"
+    export LLM_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    export LLM_MODEL_NAME="qwen3-max"
+    ```
+    或者在 `rag-hpo process` 命令中逐一传递 `--api-key`、`--base-url`、`--llm-model-name`。
+2.  运行示例命令：
+    ```bash
+    poetry run rag-hpo process \
+        --input-csv data/test_cases_qwen.csv \
+        --output-csv data/test_results_qwen.csv \
+        --output-json-raw data/test_results_qwen_raw.csv \
+        --meta-path data/hpo_meta_bge_small_zh.json \
+        --vec-path data/hpo_embedded_bge_small_zh.npz \
+        --api-key "$LLM_API_KEY" \
+        --base-url "$LLM_BASE_URL" \
+        --llm-model-name "$LLM_MODEL_NAME" \
+        --max-queries-per-minute 10
+    ```
+
+> **提示**: 若使用 `source .env` 激活仓库中已配置好的 Poetry 环境，可直接在激活后的终端中运行上述命令。
 **注意**: 对于敏感信息如 `API_KEY`，强烈建议通过环境变量设置，例如 `export LLM_API_KEY="YOUR_KEY"`。
+
+仓库额外提供了一个中文病例示例 (`examples/clinical/case_phase2_input.csv`)，可直接用于验证中文知识库与 Qwen 接口的联调效果。
 
 ## 未来改进
 
