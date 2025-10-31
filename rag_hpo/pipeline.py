@@ -42,6 +42,9 @@ class LLMClient:
         self.max_queries_per_minute = max_queries_per_minute
         self.temperature = temperature
         self.total_tokens_used = 0
+        self.max_retries = int(os.getenv("LLM_MAX_RETRIES", "3"))
+        self.retry_backoff = float(os.getenv("LLM_RETRY_BACKOFF", "2"))
+        self.request_timeout = int(os.getenv("LLM_REQUEST_TIMEOUT", "120"))
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -67,7 +70,23 @@ class LLMClient:
             ],
             "temperature": self.temperature,
         }
-        resp = requests.post(self.base_url, headers=self.headers, json=payload)
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                resp = requests.post(
+                    self.base_url,
+                    headers=self.headers,
+                    json=payload,
+                    timeout=self.request_timeout,
+                )
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    resp.raise_for_status()
+                break
+            except requests.RequestException as exc:
+                logger.log(f"[WARN] LLM request failed (attempt {attempt}/{self.max_retries}): {exc}")
+                if attempt == self.max_retries:
+                    raise
+                backoff = self.retry_backoff**attempt
+                time.sleep(backoff)
         resp.raise_for_status()
         result = resp.json()
         if "usage" in result and "total_tokens" in result["usage"]:
