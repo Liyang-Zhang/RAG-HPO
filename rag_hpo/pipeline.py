@@ -25,6 +25,11 @@ from .utils import (
 
 
 # ======================= LLM Client =======================
+KEEP_CATEGORIES = {c.strip() for c in os.getenv("KEEP_CATEGORIES", "Abnormal").split(",") if c.strip()}
+FALLBACK_TOPK = int(os.getenv("HPO_FALLBACK_TOPK", "1"))
+EXTRA_CANDIDATES = int(os.getenv("HPO_EXTRA_CANDIDATES", "0"))
+
+
 class LLMClient:
     def __init__(
         self,
@@ -301,16 +306,11 @@ def _collect_metadata_best(
 
 
 def split_exact_nonexact(df: pd.DataFrame, hpo_term_col="HPO_Term"):
-    if "category" not in df.columns:
-        raise KeyError(f"[FATAL] 'category' missing; columns: {df.columns.tolist()}")
     if hpo_term_col not in df.columns:
         raise KeyError(f"[FATAL] '{hpo_term_col}' missing; columns: {df.columns.tolist()}")
 
-    # only keep Abnormal rows
-    df_ab = df[df["category"] == "Abnormal"]
-
-    exact_df = df_ab.dropna(subset=[hpo_term_col]).copy()
-    non_exact_df = df_ab[df_ab[hpo_term_col].isna()].copy()
+    exact_df = df.dropna(subset=[hpo_term_col]).copy()
+    non_exact_df = df[df[hpo_term_col].isna()].copy()
     return exact_df, non_exact_df
 
 
@@ -363,6 +363,7 @@ def process_findings(
                 best_score, best_sent = score, s
 
         # ─── Position E: Collect row ───
+        logger.debug(f"[RETRIEVE] Phrase='{phrase}' candidates={len(unique_metadata)} " f"best_sentence='{best_sent}'")
         rows.append(
             {
                 "phrase": phrase,
@@ -420,6 +421,7 @@ def process_row(clinical_note, system_message, embeddings_model, index, embedded
     # Try to parse findings robustly
     findings = extract_findings(raw)
     logger.log(f"Parsed findings: {findings[:5]}...")  # Log first 5 findings
+    logger.debug(f"[EXTRACT] Raw findings count={len(findings)} -> {findings}")
     # If findings is empty, try to parse as a list of dicts.
     # Some LLMs may return a bare list instead of the expected wrapper.
     if not findings:
@@ -445,7 +447,9 @@ def process_row(clinical_note, system_message, embeddings_model, index, embedded
         except Exception:
             pass
 
-    findings = [f for f in findings if isinstance(f, dict) and f.get("category") == "Abnormal"]
+    findings = [f for f in findings if isinstance(f, dict) and f.get("category") in KEEP_CATEGORIES]
+    logger.debug(f"[FILTER] Keep categories {KEEP_CATEGORIES} -> {len(findings)} items kept")
+    logger.debug(f"[FILTER] Keep categories {KEEP_CATEGORIES} -> {len(findings)} items kept")
 
     # Return empty DataFrame if no valid findings, but with required columns
     required_cols = [
@@ -572,6 +576,18 @@ def parse_llm_mapping(resp_text: str, candidate_ids: set) -> (str, str, dict):
     return None, "no_hpo_found", None
 
 
+def _select_top_hpo_ids(candidates: list, exclude: set | None = None, limit: int = 1) -> list:
+    if not candidates or limit <= 0:
+        return []
+    exclude = exclude or set()
+    ranked = sorted(
+        (c for c in candidates if c.get("id") and c["id"] not in exclude),
+        key=lambda c: float(c.get("similarity") or 0),
+        reverse=True,
+    )
+    return [c["id"] for c in ranked[:limit]]
+
+
 def generate_hpo_terms(df_row: pd.DataFrame, system_message: str) -> pd.DataFrame:
     """
     Streamlined LLM + fallback logic with phrase normalization.
@@ -616,6 +632,12 @@ def generate_hpo_terms(df_row: pd.DataFrame, system_message: str) -> pd.DataFram
         )
         seen.add(hp)
     candidate_ids = {c["id"] for c in candidates}
+    ranked_candidates = sorted(
+        candidates,
+        key=lambda c: float(c.get("similarity") or 0),
+        reverse=True,
+    )
+    logger.debug(f"[CONFIRM] Phrase='{phrase}' candidate_ids={[c['id'] for c in ranked_candidates[:5]]}")
 
     # 3. Call LLM and parse
     payload = json.dumps(
@@ -635,12 +657,32 @@ def generate_hpo_terms(df_row: pd.DataFrame, system_message: str) -> pd.DataFram
         local_id = extract_hpo_term(normalized, metadata_list, cluster_idx)
         if local_id:
             hpo_id, reason = local_id, "fallback_local"
+    if not hpo_id:
+        top_ids = _select_top_hpo_ids(ranked_candidates, limit=FALLBACK_TOPK)
+        if top_ids:
+            hpo_id = top_ids[0]
+            reason = "fallback_top_candidate"
+
+    reason = reason or "no_match"
+
+    selected_ids = [hpo_id] if hpo_id else []
+    if EXTRA_CANDIDATES > 0:
+        extras = _select_top_hpo_ids(
+            ranked_candidates,
+            exclude=set(selected_ids),
+            limit=EXTRA_CANDIDATES,
+        )
+        selected_ids.extend(extras)
+
+    logger.debug(f"[CONFIRM] Phrase='{phrase}' selected_ids={selected_ids} reason={reason}")
+
+    hpo_terms = [{"phrase": phrase, "HPO_Term": hid} for hid in selected_ids] or [{"phrase": phrase, "HPO_Term": None}]
 
     # 5. Return unified record
     return pd.DataFrame(
         [
             {
-                "HPO_Terms": [{"phrase": phrase, "HPO_Term": hpo_id}],
+                "HPO_Terms": hpo_terms,
                 "raw_llm_resp": resp,
                 "llm_parse_reason": reason,
             }
@@ -821,7 +863,7 @@ def run_rag_pipeline(
         for col in ("llm_parse_reason", "raw_llm_resp"):
             non_ex[col] = non_ex.get(col, pd.Series(dtype="object")).astype("object")
 
-        idxs = non_ex[(non_ex["category"] == "Abnormal") & (non_ex["HPO_Term"].isna()) & (non_ex["HPO_Term"] != "No Candidate Fit")].index
+        idxs = non_ex[(non_ex["HPO_Term"].isna()) & (non_ex["HPO_Term"] != "No Candidate Fit")].index
 
         if not idxs.empty:
             logger.log(f"Generating HPO for {len(idxs)} entries...")

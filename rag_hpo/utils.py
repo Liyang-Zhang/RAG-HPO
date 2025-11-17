@@ -9,10 +9,23 @@ from contextlib import contextmanager
 import pandas as pd
 
 
+HPO_DEBUG = os.getenv("HPO_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+HPO_LOG_FILE = os.getenv("HPO_LOG_FILE")
+
+
 # ======================= Logger Class =======================
 class Logger:
     def __init__(self):
         self.printed_messages = set()
+
+    def _write(self, message: str):
+        if not HPO_LOG_FILE:
+            return
+        try:
+            with open(HPO_LOG_FILE, "a", encoding="utf-8") as fh:
+                fh.write(message + "\n")
+        except OSError:
+            pass
 
     def log(self, msg, once=False):
         """
@@ -25,7 +38,13 @@ class Logger:
             if msg_hash in self.printed_messages:
                 return
             self.printed_messages.add(msg_hash)
-        print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}")
+        full_message = f"{time.strftime('%Y-%m-%d %H:%M:%S')} - {msg}"
+        print(full_message)
+        self._write(full_message)
+
+    def debug(self, msg):
+        if HPO_DEBUG:
+            self.log(f"[DEBUG] {msg}")
 
 
 logger = Logger()

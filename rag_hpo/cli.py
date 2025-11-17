@@ -3,11 +3,12 @@ import sys
 import click
 import pandas as pd
 
-from .pipeline import (
-    run_rag_pipeline,
-)
+from .config import apply_runtime_config
+from .pipeline import run_rag_pipeline
 from .utils import logger
 from .vectorization import build_knowledge_base
+
+apply_runtime_config()
 
 
 @click.group()
