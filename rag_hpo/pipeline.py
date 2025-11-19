@@ -5,6 +5,7 @@ import sys
 import time
 import traceback
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 import faiss
@@ -22,6 +23,11 @@ from .utils import (
     clean_clinical_note,
     logger,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+_default_fastembed_cache = os.getenv("FASTEMBED_CACHE_PATH") or str(REPO_ROOT / "models" / "fastembed")
+os.environ.setdefault("FASTEMBED_CACHE_PATH", _default_fastembed_cache)
+Path(os.environ["FASTEMBED_CACHE_PATH"]).mkdir(parents=True, exist_ok=True)
 
 
 # ======================= LLM Client =======================
