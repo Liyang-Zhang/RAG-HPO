@@ -218,6 +218,31 @@ def load_vector_db(meta_path: str = "hpo_meta.json", vec_path: str = "hpo_embedd
     return docs, emb_matrix
 
 
+def _normalize_translation(val):
+    if isinstance(val, str):
+        return val.strip()
+    if isinstance(val, list):
+        return "; ".join([str(v).strip() for v in val if v])
+    if isinstance(val, dict):
+        return "; ".join([str(v).strip() for v in val.values() if v])
+    return ""
+
+
+def build_hpo_lookup(docs: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+    lookup: dict[str, dict[str, str]] = {}
+    for doc in docs:
+        hp_id = doc.get("hp_id")
+        if not hp_id or hp_id in lookup:
+            continue
+        label = doc.get("primary_label") or doc.get("display_phrase") or doc.get("raw_phrase") or ""
+        translation = _normalize_translation(doc.get("translations"))
+        lookup[hp_id] = {
+            "name": label,
+            "translation": translation,
+        }
+    return lookup
+
+
 def create_faiss_index(emb_matrix: np.ndarray, metric: str = "cosine"):
     # Build FAISS index for embeddings
     dim = emb_matrix.shape[1]
@@ -719,6 +744,8 @@ def process_results(final_df, output_csv_path=None, output_json_raw_path=None, d
                 ph = term.get("phrase", "").strip()
                 cat = term.get("category", "")
                 hp = term.get("HPO_Term") or ""
+                hpo_name = term.get("HPO_Name", "")
+                chpo_name = term.get("CHPO_Name", "")
                 if isinstance(hp, str):
                     hp = hp.replace("HP:HP:", "HP:")
                 if hp:
@@ -728,6 +755,8 @@ def process_results(final_df, output_csv_path=None, output_json_raw_path=None, d
                             "Category": cat,
                             "Phenotype name": ph,
                             "HPO ID": hp,
+                            "HPO Name": hpo_name,
+                            "CHPO Name": chpo_name,
                         }
                     )
                 else:
@@ -750,6 +779,8 @@ def process_results(final_df, output_csv_path=None, output_json_raw_path=None, d
                 ph = term.get("phrase", "").strip()
                 cat = term.get("category", "")
                 hp = term.get("HPO_Term") or ""
+                hpo_name = term.get("HPO_Name", "")
+                chpo_name = term.get("CHPO_Name", "")
                 if isinstance(hp, str):
                     hp = hp.replace("HP:HP:", "HP:")
                 tbl.append(
@@ -758,6 +789,8 @@ def process_results(final_df, output_csv_path=None, output_json_raw_path=None, d
                         "Category": cat,
                         "Phenotype name": ph,
                         "HPO ID": hp,
+                        "HPO Name": hpo_name,
+                        "CHPO Name": chpo_name,
                     }
                 )
         if tbl:
@@ -822,6 +855,7 @@ def run_rag_pipeline(
     # 4) initialize models and indices
     emb_model = initialize_embeddings_model(use_sbert=use_sbert, sbert_model=sbert_model, bge_model=bge_model)
     docs, emb_matrix = load_vector_db(meta_path=meta_path, vec_path=vec_path)
+    hpo_lookup = build_hpo_lookup(docs)
     index = create_faiss_index(emb_matrix, metric="cosine")
     cluster_index = build_cluster_index(docs)
 
@@ -885,8 +919,22 @@ def run_rag_pipeline(
         merged = pd.concat([exact_df, non_ex], ignore_index=True)
         merged = merged.dropna(subset=["HPO_Term"])
         if not merged.empty:
+
+            def _lookup(hp_id: Any, key: str) -> str:
+                if not isinstance(hp_id, str):
+                    return ""
+                return hpo_lookup.get(hp_id, {}).get(key, "") if hpo_lookup else ""
+
+            merged["HPO_Name"] = merged["HPO_Term"].apply(lambda hp: _lookup(hp, "name"))
+            merged["CHPO_Name"] = merged["HPO_Term"].apply(lambda hp: _lookup(hp, "translation"))
+        else:
+            merged["HPO_Name"] = ""
+            merged["CHPO_Name"] = ""
+        if not merged.empty:
             grouped = (
-                merged.groupby("patient_id")[["phrase", "category", "HPO_Term"]].apply(lambda g: g.to_dict("records")).reset_index(name="HPO_Terms")
+                merged.groupby("patient_id")[["phrase", "category", "HPO_Term", "HPO_Name", "CHPO_Name"]]
+                .apply(lambda g: g.to_dict("records"))
+                .reset_index(name="HPO_Terms")
             )
             final_df = grouped.copy()
         else:
