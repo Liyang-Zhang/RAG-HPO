@@ -1,0 +1,14 @@
+{
+  "runtime": {
+    "keep_categories": ["Abnormal", "Suspected", "Family History", "Other"],
+    "hpo_fallback_topk": 1,
+    "hpo_extra_candidates": 1,
+    "hpo_debug": false,
+    "hpo_log_file": "logs/pipeline_debug.log"
+  },
+  "llm": {
+    "api_key": "sk-********************************",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "model_name": "qwen3-max"
+  }
+}
