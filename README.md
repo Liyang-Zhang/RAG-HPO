@@ -49,6 +49,20 @@ RAG-HPO 是一个基于 Python 的工具，旨在从临床笔记中提取人类�
 *   **`rag_hpo/config.py`**:
     *   **作用**: 目前是占位符文件，未来可用于集中管理项目配置，例如 LLM 默认参数、文件路径等。
 
+## 数据与实验目录结构
+
+为避免多轮实验产生的 CSV/日志混杂在仓库根目录，项目将文件按“原始数据 vs. 实验产物”划分：
+
+| 目录 | 内容说明 |
+| --- | --- |
+| `data/` | 仅保留稳定的输入资产，如 HPO 本体 (`hp.obo`)、向量文件 (`hpo_embedded*.npz`) 以及临床原始数据 `clinical_data_20251113*.{xlsx,csv,jsonl}`。 |
+| `experiments/20251113_clinical/` | 近期 10 例临床评估的全量资料。`inputs/` 存放标准化输入 CSV，`outputs/` 包含 `clinical_eval_predictions*.csv` 等预测结果，`manual_review/` 记录医学复核表，`reports/` 落地指标 (`clinical_eval_metrics.*`, `clinical_eval_confusion.csv`)，`archive/` 保存历史 run（如 `run1/`）。 |
+| `experiments/hpo_eval/` | HPO_testcases 基准评估的输入、输出及指标。 |
+| `experiments/hpo_testcases/datasets/` | 清洗后的 `hpo_testcases_clean*.{csv,jsonl}` 等衍生数据集。 |
+| `experiments/manual_test/` | CLI 调试样例 (`test_input_clinical.csv`) 及其输出归档。 |
+
+所有新的实验性输出，建议直接指定到对应 `experiments/<experiment>/outputs/`，再配合 `reports/`、`manual_review/` 进行留档，保持仓库整洁。
+
 ## 使用说明
 
 ### 环境设置
@@ -159,6 +173,23 @@ poetry run rag-hpo process \
     --no-sbert \
     --bge-model BAAI/bge-small-zh-v1.5
 ```
+
+**10 例临床评估基线命令（推荐路径已经对齐 `experiments/20251113_clinical`）**:
+
+```bash
+poetry run rag-hpo process \
+  --input-csv experiments/20251113_clinical/inputs/clinical_eval_input.csv \
+  --output-csv experiments/20251113_clinical/outputs/clinical_eval_predictions.csv \
+  --output-json-raw experiments/20251113_clinical/outputs/clinical_eval_raw.csv \
+  --meta-path data/hpo_meta_bge_small_zh.json \
+  --vec-path data/hpo_embedded_bge_small_zh.npz \
+  --no-sbert \
+  --bge-model BAAI/bge-small-zh-v1.5
+```
+
+随后运行 `python evaluate_10_samples_20251113.py` 即可在 `experiments/20251113_clinical/reports/` 下刷新 `clinical_eval_metrics.*` 与 `clinical_eval_summary.json`。
+
+> `rag-hpo process` 生成的表格列默认包含 `Patient ID`, `Category`, `Phenotype name`, `HPO ID`, `HPO Name`, `CHPO Name`，其中 CHPO 列来自 `hpo_meta*_zh.json` 中的中文翻译，便于医学部复核。
 
 ### 通义千问 (Qwen) 快速接入
 
